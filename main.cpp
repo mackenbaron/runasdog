@@ -88,8 +88,10 @@ void onChildQuit(int sig)
 {
 	if(bDebug)
 		cout<<"catch signal"<<sig<<endl;
+#ifndef __APPLE__
 	if(childPid&&sig!=SIGCHLD)
 		kill(childPid,SIGKILL);
+#endif
 	int size=argMap.size();
 	if(size)
 	{
@@ -429,7 +431,7 @@ void _onAccept(int fd,short event,void *arg)
 	{
 		char tmp[30];
 		sprintf(tmp,"%s:%d\n",inet_ntoa(((sockaddr_in*)&addr)->sin_addr),((sockaddr_in*)&addr)->sin_port);
-		sprintf(_buf,"c%d:%d:%s",_arg->fd,strlen(tmp),tmp);
+		sprintf(_buf,"c%d:%d:%s",_arg->fd,(int)strlen(tmp),tmp);
 		write(in[1],_buf,strlen(_buf));
 	}
 	event_add(ev,NULL);
