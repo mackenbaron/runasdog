@@ -17,34 +17,37 @@
 //=====================
 using namespace std;
 
-int server_port=2012;
-char server_ip[100]="0.0.0.0";
+int server_port=2012; //"-p"
+char server_ip[100]="0.0.0.0"; //"-h"
+//options
+bool bDebug=false;   //"-d"
+bool bLimitOne=false;//"-s"
+bool bCorrect=false; //"-f"
+//
+struct evarg;
 
-pid_t childPid=0;
-bool bDebug=false;
+//need to free
+int serverFd=0;
+map<int,evarg*> arg_map;
+int in[2];
+int out[2];
+
 int p_argcount=0;
 char* p_name=NULL;
 char** p_argv=NULL;
-int in[2];
-int out[2];
-bool bLimitOne=false;
-bool bCorrect=false;
 
-int serverFd=0;
+pid_t catPid=0;
+//need to free
 
-struct evarg
-{
-	int fd;
-	evbuffer* buf;
-	bufferevent* ev;
-};
+bool catIsRunning=false;
+bool dogIsLooping=false;
+
 void _onRead(struct bufferevent *bev, void * _arg);
 void _onError(struct bufferevent *bev, short events, void *_arg);
 void _onAccept(int fd,short event,void *arg);
 void _onReadOutput(struct bufferevent *bev, void * _arg);
 void sendStr(int fd,const char*buff,int len);
 
-map<int,evarg*> argMap;
 const char* command[]=
 {
 	"-help","show help",
@@ -54,6 +57,13 @@ const char* command[]=
 	"-d","-d (debug mode)",
 	"-s","-s (shell mode,just redirect stdin/stdout)",
 	"-f","-f (change \\r\\n into \\n from client)",
+};
+
+struct evarg
+{
+	int fd;
+	evbuffer* buf;
+	bufferevent* ev;
 };
 
 void DeInit();
@@ -84,33 +94,20 @@ void showHelp()
 void doNothing(int sig)
 {
 }
-void onChildQuit(int sig)
+void _onSignal(int sig,short event,void* arg)
 {
 	if(bDebug)
 		cout<<"catch signal"<<sig<<endl;
 #ifndef __APPLE__
-	if(childPid&&sig!=SIGCHLD)
-		kill(childPid,SIGKILL);
+	if(catPid&&sig!=SIGCHLD)
+		kill(catPid,SIGKILL);
 #endif
-	int size=argMap.size();
-	if(size)
-	{
-		map<int,evarg*>::iterator it=argMap.begin();
-		for(it;it!=argMap.end();++it)
-		{
-			int fd=it->first;
-			evarg *_arg=it->second;
-			if(_arg)
-				_onError(_arg->ev,-1,_arg);
-		}
-		argMap.clear();
-	}
-	event_loopbreak();
+	catIsRunning=false;
+	if(dogIsLooping)
+		event_loopbreak();
 }
 bool Init(int argc,const char **argv)
 {
-	signal(SIGCHLD,onChildQuit);
-	signal(SIGINT,onChildQuit);
 	//signal(SIGPIPE,SIG_IGN);
 	int argsize=sizeof(command)/sizeof(char*);
 	bool canRun=false;
@@ -129,7 +126,7 @@ bool Init(int argc,const char **argv)
 			}
 			if(!valid)
 			{
-				cerr<<"cannot understand:"<<str<<endl;
+				cout<<"cannot understand:"<<str<<endl;
 				showHelp();
 			}
 			else
@@ -163,7 +160,7 @@ bool Init(int argc,const char **argv)
 					}
 					else
 					{
-						cerr<<"-exec arg not enough\n";
+						cout<<"-exec arg not enough\n";
 						quit(-1);
 					}
 				}
@@ -172,7 +169,7 @@ bool Init(int argc,const char **argv)
 					++i;
 					if(i>=argc)
 					{
-						cerr<<"please enter your port"<<endl;
+						cout<<"please enter your port"<<endl;
 						showHelp();
 					}
 					const char*arg=argv[i];
@@ -188,7 +185,7 @@ bool Init(int argc,const char **argv)
 					++i;
 					if(i>=argc)
 					{
-						cerr<<"please enter your ip"<<endl;
+						cout<<"please enter your ip"<<endl;
 						showHelp();
 					}
 					const char*arg=argv[i];
@@ -217,7 +214,22 @@ bool Init(int argc,const char **argv)
 	return canRun;
 }
 void DeInit()
-{
+{	
+	//free clients
+	int size=arg_map.size();
+	if(size)
+	{
+		map<int,evarg*>::iterator it=arg_map.begin();
+		for(it;it!=arg_map.end();++it)
+		{
+			int fd=it->first;
+			evarg *_arg=it->second;
+			if(_arg)
+				_onError(_arg->ev,-1,_arg);
+		}
+		arg_map.clear();
+	}
+
 	if(p_name)
 	{
 		delete[] p_name;
@@ -232,12 +244,13 @@ void DeInit()
 		}
 		delete[] p_argv;
 	}
+	//close server
 	if(serverFd)
 	{
 		close(serverFd);
 		serverFd=0;
 	}
-	argMap.clear();
+
 	cout<<"free all"<<endl;
 }
 void ForkDog()
@@ -280,7 +293,7 @@ void ForkDog()
 			char *command=(char*)EVBUFFER_DATA(cmd);
 			if(system(command))
 			{
-				cerr<<"execute dog error:"<<errno<<endl;
+				cout<<"execute dog error:"<<errno<<endl;
 			}
 			evbuffer_free(cmd);
 			close(in[0]);
@@ -289,19 +302,20 @@ void ForkDog()
 		}
 		else if(pid>0)
 		{
-			childPid=pid;
+			catPid=pid;
 			close(in[0]);
 			close(out[1]);
+			catIsRunning=true;
 			InitEvent();
 		}
 		else
 		{
-			cerr<<"fork failed"<<endl;
+			cout<<"fork failed"<<endl;
 		}
 	}
 	else
 	{
-		cerr<<"create pipe failed!"<<endl;
+		cout<<"create pipe failed!"<<endl;
 	}
 }
 
@@ -363,6 +377,7 @@ void _onRead(struct bufferevent *bev, void * _arg)
 	{
 		cout<<"recv from port:"<<len<<" "<<EVBUFFER_DATA(buf)<<endl;
 	}
+	if(!catIsRunning)return;
 	if(bLimitOne)
 	{
 		write(in[1],(char*)EVBUFFER_DATA(buf),len);
@@ -382,27 +397,35 @@ void _onError(struct bufferevent *bev, short events, void *_arg)
 	if(events&EVBUFFER_EOF||events<=0){
 		evarg *arg=(evarg*)_arg;
 
-		map<int,evarg*>::iterator it=argMap.find(arg->fd);
-		if(it!=argMap.end())
-		{
-			if(events>=0)
-				argMap.erase(it);
-		}
-		else
-		{
-			return ;
-		}
-		if(!bLimitOne&&events>0)
+		if(!bLimitOne&&catIsRunning) //multi-mode && cat progress is running
 		{
 			sprintf(_buf,"d%d:1:\n",arg->fd);
 			write(in[1],_buf,strlen(_buf));
 		}
 
+		if(events>0)
+		{
+			map<int,evarg*>::iterator it=arg_map.find(arg->fd);
+			if(it!=arg_map.end())
+			{
+				arg_map.erase(it);
+			}
+		}
+		if(bDebug)
+		{
+			if(arg->fd==out[0])
+			{
+				cout<<"cat quit"<<endl;
+			}
+			else
+			{
+				cout<<arg->fd<<" client quit"<<endl;
+			}
+		}
 		evbuffer_free(arg->buf);
 		close(arg->fd);
 		free(arg);
-		bufferevent_free(bev);
-		cout<<"client quit"<<endl;
+		//bufferevent_free(bev);
 	}
 }
 void _onAccept(int fd,short event,void *arg)
@@ -414,7 +437,7 @@ void _onAccept(int fd,short event,void *arg)
 	int s=accept(fd,&addr,&len);
 	if(s==-1)
 	{
-		cerr<<"server accept error"<<endl;
+		cout<<"server accept error"<<endl;
 		quit(-1);
 	}
 	noblock(s);
@@ -423,11 +446,9 @@ void _onAccept(int fd,short event,void *arg)
 	_arg->fd=s;
 	struct bufferevent* client=bufferevent_new(s,_onRead,NULL,_onError,(void*)_arg);
 	_arg->ev=client;
-	argMap.insert(pair<int,evarg*>(s,_arg));
-	//bufferevent_settimeout(client,0,1);
+	arg_map.insert(pair<int,evarg*>(s,_arg));
 	bufferevent_enable(client, EV_READ);
-	//cout<<"accept client from "<<inet_ntoa(((sockaddr_in*)&addr)->sin_addr)<<":"<<((sockaddr_in*)&addr)->sin_port<<endl;
-	if(!bLimitOne)
+	if(!bLimitOne&&catIsRunning)
 	{
 		char tmp[30];
 		sprintf(tmp,"%s:%d\n",inet_ntoa(((sockaddr_in*)&addr)->sin_addr),((sockaddr_in*)&addr)->sin_port);
@@ -454,10 +475,10 @@ void _sendStr(int fd,const char*buff,int len)
 }
 void sendStr(int fd,const char*buff,int len)
 {
-	if(fd==0&&argMap.size())
+	if(fd==0&&arg_map.size())
 	{
-		map<int,evarg*>::iterator it=argMap.begin();
-		for(it;it!=argMap.end();++it)
+		map<int,evarg*>::iterator it=arg_map.begin();
+		for(it;it!=arg_map.end();++it)
 		{
 			evarg *_arg=it->second;
 			int fd=_arg->fd;
@@ -483,10 +504,6 @@ void _onReadOutput(struct bufferevent *bev, void * _arg)
 	if(len)
 	{
 		char*data=(char*)EVBUFFER_DATA(buf);
-		if(bDebug)
-		{
-			cout<<"return "<<data<<endl;
-		}
 		if(bLimitOne)
 		{
 			sendStr(0,data,len);
@@ -520,8 +537,8 @@ void _onReadOutput(struct bufferevent *bev, void * _arg)
 							evbuffer_drain(buf,j+1+datalen);
 							if(base==base_off+1)
 							{
-								map<int,evarg*>::iterator it=argMap.find(fd);
-								if(it!=argMap.end())
+								map<int,evarg*>::iterator it=arg_map.find(fd);
+								if(it!=arg_map.end())
 								{
 									evarg *_arg=it->second;
 
@@ -530,6 +547,7 @@ void _onReadOutput(struct bufferevent *bev, void * _arg)
 										_onError(_arg->ev,0,_arg);
 										cout<<"force close fd:"<<fd<<endl;
 									}
+									arg_map.erase(it);
 								}
 							}
 							len=buf->off;
@@ -545,7 +563,7 @@ void _onReadOutput(struct bufferevent *bev, void * _arg)
 					}
 					else if(data[j]>'9'||data[j]<'0')
 					{
-						cerr<<"fetch ouput format wrong:"<<data+newBase<<endl;
+						cout<<"fetch ouput format wrong:"<<data+newBase<<endl;
 						evbuffer_drain(buf,len);
 						return;
 					}
@@ -557,7 +575,8 @@ void _onReadOutput(struct bufferevent *bev, void * _arg)
 			}
 			else if(data[i]>'9'||data[i]<'0')
 			{
-				cerr<<"fetch fd format wrong:"<<i<<" "<<data[i]<<endl;
+				if(bDebug)
+					cout<<"fetch fd format wrong:"<<i<<" "<<data[i]<<endl;
 				evbuffer_drain(buf,len);
 				break;
 			}
@@ -573,7 +592,7 @@ void InitEvent()
 	fd=socket(AF_INET,SOCK_STREAM,0);
 	if(fd==-1)
 	{
-		cerr<<"init socket error"<<endl;
+		cout<<"init socket error"<<endl;
 		quit(-1);
 	}
 	memset(&addr,0,sizeof(addr));
@@ -582,36 +601,40 @@ void InitEvent()
 	addr.sin_addr.s_addr=(inet_addr(server_ip));
 	if(bind(fd,(sockaddr*)&addr,sizeof(addr))==-1)
 	{
-		cerr<<"cannot bind port:"<<server_ip<<":"<<server_port<<endl;
+		cout<<"cannot bind port:"<<server_ip<<":"<<server_port<<endl;
 		quit(-1);
 	}
 	if(listen(fd,5)==-1)
 	{
-		cerr<<"cannot listen on port:"<<server_ip<<":"<<server_port<<endl;
+		cout<<"cannot listen on port:"<<server_ip<<":"<<server_port<<endl;
 		quit(-1);
+	}
+	else
+	{
+		cout<<"server is listenning on "<<server_ip<<":"<<server_port<<endl;
 	}
 	event_init();
 
 	evarg *_arg=(evarg*)malloc(sizeof(evarg));
 	_arg->buf=evbuffer_new();
 	_arg->fd=out[0];
-	struct bufferevent* output=bufferevent_new(out[0],_onReadOutput,NULL,_onError,(void*)_arg);
-	bufferevent_enable(output, EV_READ);
+	struct bufferevent* pipe_buf=bufferevent_new(out[0],_onReadOutput,NULL,_onError,(void*)_arg);
+	bufferevent_enable(pipe_buf, EV_READ);
 
-	event server;
+	event server,signal_int,signal_chld;
 	event_set(&server,fd,EV_READ,_onAccept,&server);
 	event_add(&server, NULL);
 	//int flags=fcntl(out[0],F_GETFL,0);
 	//fcntl(out[0],F_SETFL,flags|O_NONBLOCK);
+	event_set(&signal_int, SIGINT, EV_SIGNAL, _onSignal,NULL);
+	event_set(&signal_chld, SIGCHLD, EV_SIGNAL, _onSignal,NULL);
+	event_add(&signal_int, NULL);
+	event_add(&signal_chld, NULL);
 	cout<<"Init server OK"<<endl;
 	serverFd=fd;
+	dogIsLooping=true;
 	event_dispatch();
-	if(serverFd)
-	{
-		close(serverFd);
-		serverFd=0;
-		bufferevent_free(output);
-	}
+	dogIsLooping=false;
 }
 int main(int argc,char **argv)
 {
