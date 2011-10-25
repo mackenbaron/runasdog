@@ -17,12 +17,17 @@
 //=====================
 using namespace std;
 
-int server_port=2012; //"-p"
+int server_port=3000; //"-p"
 char server_ip[100]="0.0.0.0"; //"-h"
 //options
 bool bDebug=false;   //"-d"
 bool bLimitOne=false;//"-s"
 bool bCorrect=false; //"-f"
+
+int max_client_num=0; //"-c 100"
+
+int admin_server_port=0; //"-P"
+char admin_server_ip[100]="0.0.0.0"; //"-H"
 //
 struct evarg;
 
@@ -90,9 +95,6 @@ void showHelp()
 		cout<<command[i]<<"\t"<<command[i+1]<<endl;
 	}
 	quit(0);
-}
-void doNothing(int sig)
-{
 }
 void _onSignal(int sig,short event,void* arg)
 {
