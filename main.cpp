@@ -57,8 +57,10 @@ const char* command[]=
 {
 	"-help","show help",
 	"-e","-e program arg1 arg2 ...",
-	"-p","-p 1000 (server port,default 2012)",
+	"-p","-p 3000 (server port,default 3000)",
+	"-P","-P 3100 (admin port,default 0,don't listenning admin port)",
 	"-h","-h 127.0.0.1 (server ip)",
+	"-H","-H 127.0.0.1 (admin ip)",
 	"-d","-d (debug mode)",
 	"-s","-s (shell mode,just redirect stdin/stdout)",
 	"-f","-f (change \\r\\n into \\n from client)",
