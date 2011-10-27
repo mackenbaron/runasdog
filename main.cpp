@@ -23,6 +23,7 @@ char server_ip[100]="0.0.0.0"; //"-h"
 bool bDebug=false;   //"-d"
 bool bLimitOne=false;//"-s"
 bool bCorrect=false; //"-f"
+bool bRestart=false; //"-r"
 
 int max_client_num=0; //"-c 100"
 
@@ -64,6 +65,8 @@ const char* command[]=
 	"-d","-d (debug mode)",
 	"-s","-s (shell mode,just redirect stdin/stdout)",
 	"-f","-f (change \\r\\n into \\n from client)",
+	"-c","-c 10(max client num)",
+	"-r","-r (restart child when child exit)",
 };
 
 struct evarg
@@ -426,10 +429,10 @@ void _onError(struct bufferevent *bev, short events, void *_arg)
 				cout<<arg->fd<<" client quit"<<endl;
 			}
 		}
+		//bufferevent_free(bev);
 		evbuffer_free(arg->buf);
 		close(arg->fd);
 		free(arg);
-		//bufferevent_free(bev);
 	}
 }
 void _onAccept(int fd,short event,void *arg)
@@ -589,7 +592,8 @@ void _onReadOutput(struct bufferevent *bev, void * _arg)
 
 	//evbuffer_write(buf,1);
 }
-void InitEvent()
+
+int _genServer(const char*ip,const int &port)
 {
 	int fd;
 	sockaddr_in addr;
@@ -599,24 +603,31 @@ void InitEvent()
 		cout<<"init socket error"<<endl;
 		quit(-1);
 	}
+	int val=1;
+	setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,(const char*)(&val),sizeof(val));
 	memset(&addr,0,sizeof(addr));
 	addr.sin_family=AF_INET;
-	addr.sin_port=htons(server_port);
-	addr.sin_addr.s_addr=(inet_addr(server_ip));
+	addr.sin_port=htons(port);
+	addr.sin_addr.s_addr=(inet_addr(ip));
 	if(bind(fd,(sockaddr*)&addr,sizeof(addr))==-1)
 	{
-		cout<<"cannot bind port:"<<server_ip<<":"<<server_port<<endl;
+		cout<<"cannot bind port:"<<ip<<":"<<port<<endl;
 		quit(-1);
 	}
 	if(listen(fd,5)==-1)
 	{
-		cout<<"cannot listen on port:"<<server_ip<<":"<<server_port<<endl;
+		cout<<"cannot listen on port:"<<ip<<":"<<port<<endl;
 		quit(-1);
 	}
 	else
 	{
-		cout<<"server is listenning on "<<server_ip<<":"<<server_port<<endl;
+		cout<<"server is listenning on "<<ip<<":"<<port<<endl;
 	}
+	return fd;
+}
+void InitEvent()
+{
+	int fd=_genServer(server_ip,server_port);
 	event_init();
 
 	evarg *_arg=(evarg*)malloc(sizeof(evarg));
@@ -636,6 +647,13 @@ void InitEvent()
 	event_add(&signal_chld, NULL);
 	cout<<"Init server OK"<<endl;
 	serverFd=fd;
+	if(admin_server_port>0)
+	{
+		int fd=_genServer(admin_server_ip,admin_server_port);
+		event server;
+		//event_set(&server,fd,EV_READ,_onAdminAccept,&server);
+		event_add(&server, NULL);
+	}
 	dogIsLooping=true;
 	event_dispatch();
 	dogIsLooping=false;
