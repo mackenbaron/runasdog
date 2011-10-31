@@ -1,3 +1,3 @@
 #!/bin/bash
 
-./runasdog -p 3000 -e lua testfile/test.lua
+./runasdog -p 3000 -e lua testfile/chatroom.lua
