@@ -7,15 +7,24 @@ local function put(fd,...)
 	io.stdout:flush()
 end
 local function get(line)
-	local t,fd,other=string.match(line,"([cdr])(%d+):(.*)")
-	if t then
-		fd=tonumber(fd)
-		return t,fd,other
-	else
-		return nil,nil,nil
-	end 
+	local result=""
+	local t,fd,count,other
+	while true do
+		t,fd,count,other=string.match(line,"([cdr])(%d+):(%d+):(.*)")
+		if t then
+			fd=tonumber(fd)
+			count=tonumber(count)
+			result=result..string.sub(other,1,count)
+			line=string.sub(other,count+1,-1)
+			if line=="" then
+				break
+			end
+		else
+			break
+		end 
+	end
+	return t,fd,result
 end 
-
 local function onConnect(fd,addr,port)
 end
 
