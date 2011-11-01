@@ -39,7 +39,7 @@ local function onConnect(fd,addr,port)
 end
 
 local function onDisConnect(fd)
-	put(fd,"client",map[fd].ip,map[fd].port,"leave")
+	put(1,"client",fd,map[fd].ip,map[fd].port,"leave")
 	map[fd]=nil
 end
 local function onRecv(fd,str)
@@ -72,7 +72,7 @@ local function onRecv(fd,str)
 		local c=0
 		for a,b in pairs(map)do
 			c=c+1
-			put(fd,"player",b.ip,",id:",b.id)
+			put(fd,"player",b.ip..":"..tostring(b.port),",id:",b.id)
 			if fd==b.fd then
 				put(fd,"^this is you")
 			end

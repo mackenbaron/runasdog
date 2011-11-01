@@ -21,7 +21,7 @@ int server_port=3000; //"-p"
 char server_ip[100]="0.0.0.0"; //"-h"
 //options
 bool b_debug=false;   //"-d"
-bool b_broadcast=false;//"-s"
+bool b_broadcast=true;//"-m"
 bool b_fix=false; //"-f"
 //
 struct evarg;
@@ -48,17 +48,16 @@ void _on_connected(int fd,short event,void *arg);
 void _on_read_output(struct bufferevent *bev, void * _arg);
 void _send_str(int fd,const char*buff,int len);
 
+
 const char* command[]=
 {
 	"-help","show help",
 	"-e","-e program arg1 arg2 ...",
 	"-p","-p 3000 (server port,default 3000)",
 	"-h","-h 127.0.0.1 (server ip)",
-	"-d","-d (debug mode)",
-	"-s","-s (shell mode,just redirect stdin/stdout)",
+	"-d","-d (debug mode,with more output)",
+	"-m","-m (multi-client mode,not just redirect stdin/stdout,but also identify clients with id)",
 	"-f","-f (change \\r\\n into \\n from client)",
-	"-c","-c 10(max client num)",
-	"-r","-r (restart child when child exit)",
 };
 
 struct evarg
@@ -69,7 +68,7 @@ struct evarg
 };
 
 void de_init();
-void init_event();
+void init_server_event();
 
 void _noblock(int fd)
 {
@@ -191,9 +190,9 @@ bool init(int argc,const char **argv)
 					strcpy(server_ip,arg);
 
 				}
-				else if(!strcmp(str,"-s"))
+				else if(!strcmp(str,"-m"))
 				{
-					b_broadcast=true;
+					b_broadcast=false;
 				}
 				else if(!strcmp(str,"-f"))
 				{
@@ -305,7 +304,15 @@ void fork_cat()
 			close(in[0]);
 			close(out[1]);
 			cat_running=true;
-			init_event();
+                        evarg *_arg=(evarg*)malloc(sizeof(evarg));
+                        _arg->buf=evbuffer_new();
+                        _arg->fd=out[0];
+                        struct bufferevent* pipe_buf=bufferevent_new(out[0],_on_read_output,NULL,_on_error,(void*)_arg);
+                        bufferevent_enable(pipe_buf, EV_READ);
+                        init_server_event();
+
+			close(in[1]);
+			close(out[0]);
 		}
 		else
 		{
@@ -421,7 +428,8 @@ void _on_error(struct bufferevent *bev, short events, void *_arg)
 				cout<<arg->fd<<" client quit"<<endl;
 			}
 		}
-		//bufferevent_free(bev);
+                if(dog_looping)
+        		bufferevent_free(bev);
 		evbuffer_free(arg->buf);
 		close(arg->fd);
 		free(arg);
@@ -617,16 +625,9 @@ int _gen_server(const char*ip,const int &port)
 	}
 	return fd;
 }
-void init_event()
+void init_server_event()
 {
 	int fd=_gen_server(server_ip,server_port);
-	event_init();
-
-	evarg *_arg=(evarg*)malloc(sizeof(evarg));
-	_arg->buf=evbuffer_new();
-	_arg->fd=out[0];
-	struct bufferevent* pipe_buf=bufferevent_new(out[0],_on_read_output,NULL,_on_error,(void*)_arg);
-	bufferevent_enable(pipe_buf, EV_READ);
 
 	event server,signal_int,signal_chld;
 	event_set(&server,fd,EV_READ,_on_connected,&server);
@@ -649,6 +650,7 @@ int main(int argc,char **argv)
 	bool canRun=init(argc,(const char**)argv);
 	if(canRun)
 	{
+                event_init();
 		fork_cat();
 	}
 	de_init();
