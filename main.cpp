@@ -403,7 +403,7 @@ void _on_error(struct bufferevent *bev, short events, void *_arg)
 	if(events&EVBUFFER_EOF||events<=0){
 		evarg *arg=(evarg*)_arg;
 
-		if(!b_broadcast&&cat_running) //multi-mode && cat progress is running
+		if(!b_broadcast&&cat_running&&arg->fd!=out[0]) //multi-mode && cat progress is running
 		{
 			sprintf(_buf,"d%d:1:\n",arg->fd);
 			write(in[1],_buf,strlen(_buf));
