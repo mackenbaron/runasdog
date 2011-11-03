@@ -552,7 +552,8 @@ void _on_read_output(struct bufferevent *bev, void * _arg)
 									if(_arg)
 									{
 										_on_error(_arg->ev,0,_arg);
-										cout<<"force close fd:"<<fd<<endl;
+                                                                                if(b_debug)
+                                                                                        cout<<"force close fd:"<<fd<<endl;
 									}
 									arg_map.erase(it);
 								}
