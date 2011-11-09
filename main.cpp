@@ -23,6 +23,7 @@ char server_ip[100]="0.0.0.0"; //"-h"
 bool b_debug=false;   //"-d"
 bool b_broadcast=true;//"-m"
 bool b_fix=false; //"-f"
+bool b_not_redirect_error=false; //"-n"
 //
 struct evarg;
 
@@ -58,6 +59,7 @@ const char* command[]=
 	"-d","-d (debug mode,with more output)",
 	"-m","-m (multi-client mode,not just redirect stdin/stdout,but also identify clients with id)",
 	"-f","-f (change \\r\\n into \\n from client)",
+	"-n","-n (don't redirect stderr)",
 };
 
 struct evarg
@@ -198,6 +200,10 @@ bool init(int argc,const char **argv)
 				{
 					b_fix=true;
 				}
+				else if(!strcmp(str,"-n"))
+				{
+					b_not_redirect_error=true;
+				}
 				else if(!strcmp(str,"-help"))
 				{
 					show_manual();
@@ -249,7 +255,8 @@ void de_init()
 		server_fd=0;
 	}
 
-	cout<<"free all"<<endl;
+        if(cat_pid)
+        	cout<<"free all"<<endl;
 }
 void fork_cat()
 {
@@ -273,7 +280,8 @@ void fork_cat()
 			close(out[0]);
 			dup2(in[0],0);
 			dup2(out[1],1);
-			dup2(out[1],2);
+                        if(!b_not_redirect_error)
+        			dup2(out[1],2);
 			close(in[0]);
 			close(out[1]);
 			//if(execvp(p_name,p_argv)==-1)
@@ -296,7 +304,8 @@ void fork_cat()
 			evbuffer_free(cmd);
 			close(in[0]);
 			close(out[1]);
-			close(out[1]);
+                        if(!b_not_redirect_error)
+        			close(out[1]);
 		}
 		else if(pid>0)
 		{
