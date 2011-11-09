@@ -16,6 +16,7 @@
 #include <map>
 //=====================
 using namespace std;
+#define VERSION 0x02
 
 int server_port=3000; //"-p"
 char server_ip[100]="0.0.0.0"; //"-h"
