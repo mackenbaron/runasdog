@@ -1,5 +1,3 @@
-[[download_button]]
-[[project_screenshots]]
 
 Author:vzex
 ----
